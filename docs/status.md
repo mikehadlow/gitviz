@@ -18,3 +18,4 @@ Phase 1 complete. Git data extraction implemented and tested.
 
 - [Master plan](plan.md) — complete
 - [Git parser subplan](git-parser-subplan.md) — complete
+- [Tree builder subplan](tree-builder-subplan.md) — complete
