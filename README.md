@@ -1,20 +1,43 @@
-# GitVis Visualize your Git repository
+# GitVis — Visualize your Git repository
 
-This tool creates an interactive visualization of your Git repository. Explore
-the evolution of your repository over time, where the hotspots are, and who
-has contributed to which features.
+An interactive visualization of your Git repository. Explore the structure,
+see where the hotspots are, and who has contributed to which parts of the
+codebase.
 
-## Development
+![GitVis visualization](docs/screenshot.png)
 
-To install dependencies:
+## Getting Started
+
+Install dependencies:
 
 ```bash
 bun install
 ```
 
-To run:
+Run against any Git repository:
 
 ```bash
-bun run index.ts
+bun run start <path-to-git-repo>
 ```
 
+Then open http://localhost:3000 in your browser.
+
+## Development
+
+Build the frontend bundle:
+
+```bash
+bun run build
+```
+
+Run with hot reload:
+
+```bash
+bun run dev <path-to-git-repo>
+```
+
+Run tests:
+
+```bash
+bun test
+```
