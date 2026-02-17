@@ -169,6 +169,7 @@ function buildLegend(
 
 // -- Main --
 
+const header = document.getElementById("header")!;
 const app = document.getElementById("app")!;
 const tooltip = document.getElementById("tooltip")!;
 
@@ -179,6 +180,22 @@ try {
     throw new Error(`fetch failed: ${res.status}`);
   }
   const data: RepoData = await res.json();
+
+  // Count total commits across all files
+  function countCommits(node: DirNode | FileNode): number {
+    if (node.type === "directory") {
+      return (node as DirNode).children.reduce((sum, c) => sum + countCommits(c), 0);
+    }
+    return (node as FileNode).commits.length;
+  }
+  const totalCommits = countCommits(data.tree);
+
+  // Populate header
+  header.innerHTML = `
+    <div class="header-name">${data.repoName}</div>
+    <div class="header-stat"><span>${data.authors.length}</span> authors</div>
+    <div class="header-stat"><span>${totalCommits.toLocaleString()}</span> commits</div>
+  `;
 
   const { nodes, links } = flattenTree(data.tree);
 
