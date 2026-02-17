@@ -5,10 +5,10 @@ const MIME: Record<string, string> = {
   ".html": "text/html",
   ".css": "text/css",
   ".js": "text/javascript",
-  ".ts": "text/javascript", // Bun transpiles .ts on the fly
 };
 
 const PUBLIC_DIR = path.join(import.meta.dir, "..", "public");
+const DIST_DIR = path.join(import.meta.dir, "..", "dist");
 
 export function startServer(
   repoData: RepoData,
@@ -39,19 +39,19 @@ export function startServer(
         });
       }
 
-      // Serve static files from public/
+      // Serve static files from dist/ (built JS) and public/ (HTML, CSS)
       const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
-      const resolved = path.normalize(path.join(PUBLIC_DIR, filePath));
-      if (!resolved.startsWith(PUBLIC_DIR)) {
-        return new Response("Forbidden", { status: 403 });
-      }
-      const file = Bun.file(resolved);
-      if (await file.exists()) {
-        const ext = path.extname(filePath);
-        const contentType = MIME[ext] ?? "application/octet-stream";
-        return new Response(file, {
-          headers: { "content-type": contentType },
-        });
+      for (const dir of [DIST_DIR, PUBLIC_DIR]) {
+        const resolved = path.normalize(path.join(dir, filePath));
+        if (!resolved.startsWith(dir)) continue;
+        const file = Bun.file(resolved);
+        if (await file.exists()) {
+          const ext = path.extname(filePath);
+          const contentType = MIME[ext] ?? "application/octet-stream";
+          return new Response(file, {
+            headers: { "content-type": contentType },
+          });
+        }
       }
 
       return new Response("Not Found", { status: 404 });
