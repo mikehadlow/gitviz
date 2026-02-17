@@ -11,7 +11,7 @@ Phase 3 complete. Server and CLI entry point implemented and tested.
 | 1 | Data Extraction (`src/types.ts`, `src/git.ts`) | Complete |
 | 2 | Tree Building (`src/tree.ts`) | Complete |
 | 3 | Server (`src/server.ts`, `index.ts`, `public/`) | Complete |
-| 4 | Visualization (`public/app.ts`) | Not started |
+| 4 | Visualization (`public/app.ts`) | Not started — [subplan](visualization-subplan.md) |
 | 5 | Timeline Slider | Not started |
 
 ## Plans
@@ -20,3 +20,4 @@ Phase 3 complete. Server and CLI entry point implemented and tested.
 - [Git parser subplan](git-parser-subplan.md) — complete
 - [Tree builder subplan](tree-builder-subplan.md) — complete
 - [Server subplan](server-subplan.md) — complete
+- [Visualization subplan](visualization-subplan.md) — not started
