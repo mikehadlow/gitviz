@@ -28,6 +28,7 @@ export function parseCommitLog(output: string): RawCommitEntry[] {
   const lines = output.split("\n");
   const entries: RawCommitEntry[] = [];
   let current: RawCommitEntry | null = null;
+  let unexpectedLines = 0;
 
   for (const line of lines) {
     if (line.startsWith("COMMIT\0")) {
@@ -46,21 +47,25 @@ export function parseCommitLog(output: string): RawCommitEntry[] {
     if (line === "") continue;
 
     // numstat line: added\tremoved\tpath
-    const match = line.match(/^(-|\d+)\t(-|\d+)\t(.+)$/);
-    if (match) {
-      const rawPath = match[3];
-      const filePath = expandRename(rawPath);
-      const isBinary = match[1] === "-";
+    const parts = line.split("\t");
+    if (parts.length >= 3) {
+      const rawPath = parts.slice(2).join("\t"); // handle paths with tabs (rare)
+      const filePath = rawPath.includes("=>") ? expandRename(rawPath) : rawPath;
+      const isBinary = parts[0] === "-";
       current.files.push({
         path: filePath,
-        linesAdded: isBinary ? -1 : parseInt(match[1], 10),
-        linesRemoved: isBinary ? -1 : parseInt(match[2], 10),
+        linesAdded: isBinary ? -1 : parseInt(parts[0], 10),
+        linesRemoved: isBinary ? -1 : parseInt(parts[1], 10),
       });
     } else {
-      console.warn(`[parseCommitLog] Unexpected line: ${line}`);
+      unexpectedLines++;
     }
   }
   if (current) entries.push(current);
+
+  if (unexpectedLines > 0) {
+    console.warn(`[parseCommitLog] Skipped ${unexpectedLines} unexpected line(s)`);
+  }
 
   return entries;
 }
@@ -124,16 +129,25 @@ export function parseDeletions(output: string): DeletionMap {
 /**
  * Run all git commands in parallel and return parsed data.
  */
-export async function extractGitData(repoPath: string) {
+export async function extractGitData(repoPath: string, maxCommits: number = 10000) {
+  // Validate that the path is a git repository
+  try {
+    await Bun.$`git -C ${repoPath} rev-parse --git-dir`.quiet();
+  } catch {
+    throw new Error(`"${repoPath}" is not a git repository`);
+  }
+
   const [commitLogResult, fileSizesResult, deletionsResult, repoNameResult] =
     await Promise.all([
-      Bun.$`git -C ${repoPath} log --all --format=COMMIT%x00%H%x00%aI%x00%an --numstat`
-        .text(),
+      Bun.$`git -C ${repoPath} log --all -n ${maxCommits} --format=COMMIT%x00%H%x00%aI%x00%an --numstat`
+        .text()
+        .catch(() => ""), // empty repo with no commits
       Bun.$`git -C ${repoPath} ls-tree -r --long HEAD`
         .text()
         .catch(() => ""), // empty repo / detached HEAD
-      Bun.$`git -C ${repoPath} log --all --diff-filter=D --format=DELETE%x00%aI --name-only`
-        .text(),
+      Bun.$`git -C ${repoPath} log --all -n ${maxCommits} --diff-filter=D --format=DELETE%x00%aI --name-only`
+        .text()
+        .catch(() => ""), // no deletions or empty repo
       Bun.$`git -C ${repoPath} rev-parse --show-toplevel`
         .text(),
     ]);

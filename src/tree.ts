@@ -2,7 +2,6 @@ import type {
   RawCommitEntry,
   FileSizeMap,
   DeletionMap,
-  FileCommit,
   FileNode,
   DirNode,
   RepoData,
@@ -12,55 +11,38 @@ function sortCommitsChronologically(commits: RawCommitEntry[]): RawCommitEntry[]
   return [...commits].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function buildFlatFileMap(commits: RawCommitEntry[]): Map<string, FileNode> {
+function buildFileMap(commits: RawCommitEntry[]): Map<string, FileNode> {
   const map = new Map<string, FileNode>();
   for (const commit of commits) {
     for (const file of commit.files) {
-      if (!map.has(file.path)) {
-        map.set(file.path, {
+      let node = map.get(file.path);
+      if (!node) {
+        node = {
           name: file.path.split("/").pop()!,
           path: file.path,
           type: "file",
-          createdAt: "",
+          createdAt: commit.date,
           deletedAt: null,
           size: 0,
           commits: [],
-        });
+        };
+        map.set(file.path, node);
       }
-    }
-  }
-  return map;
-}
 
-function populateFileCommits(
-  fileMap: Map<string, FileNode>,
-  sortedCommits: RawCommitEntry[],
-): void {
-  for (const commit of sortedCommits) {
-    for (const file of commit.files) {
-      const node = fileMap.get(file.path);
-      if (!node) continue;
-
-      const fc: FileCommit = {
+      node.commits.push({
         hash: commit.hash,
         date: commit.date,
         author: commit.author,
         linesAdded: file.linesAdded,
         linesRemoved: file.linesRemoved,
-      };
-      node.commits.push(fc);
+      });
 
-      // First commit seen (chronological) sets createdAt
-      if (!node.createdAt) {
-        node.createdAt = commit.date;
-      }
-
-      // Any binary commit marks file as binfile
       if (file.linesAdded === -1) {
         node.type = "binfile";
       }
     }
   }
+  return map;
 }
 
 function applyMetadata(
@@ -107,17 +89,20 @@ function assembleTree(fileMap: Map<string, FileNode>): DirNode {
   return root;
 }
 
-function sortTreeChildren(node: DirNode): void {
-  node.children.sort((a, b) => {
-    const aIsDir = a.type === "directory" ? 0 : 1;
-    const bIsDir = b.type === "directory" ? 0 : 1;
-    if (aIsDir !== bIsDir) return aIsDir - bIsDir;
-    return a.name.localeCompare(b.name);
-  });
-
-  for (const child of node.children) {
-    if (child.type === "directory") {
-      sortTreeChildren(child);
+function sortTreeChildren(root: DirNode): void {
+  const stack: DirNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    node.children.sort((a, b) => {
+      const aIsDir = a.type === "directory" ? 0 : 1;
+      const bIsDir = b.type === "directory" ? 0 : 1;
+      if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+      return a.name.localeCompare(b.name);
+    });
+    for (const child of node.children) {
+      if (child.type === "directory") {
+        stack.push(child);
+      }
     }
   }
 }
@@ -138,8 +123,7 @@ export function buildTree(data: {
 }): RepoData {
   const sortedCommits = sortCommitsChronologically(data.commits);
 
-  const fileMap = buildFlatFileMap(sortedCommits);
-  populateFileCommits(fileMap, sortedCommits);
+  const fileMap = buildFileMap(sortedCommits);
   applyMetadata(fileMap, data.fileSizes, data.deletions);
 
   const tree = assembleTree(fileMap);
