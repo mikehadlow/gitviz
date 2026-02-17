@@ -6,13 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 gitvis is a git visualization tool built with Bun and TypeScript.
 
+Read `docs/plan.md` and `docs/status.md` to view the current status of the project, and outstanding tasks to complete.
+
 ## Commands
 
 - `bun install` — install dependencies
-- `bun run index.ts` — run the app
-- `bun --hot index.ts` — run with hot reload
+- `bun run start <path to Git repo>` — run the app
+- `bun run dev <path to Git repo>` — run with hot reload
 - `bun test` — run tests
 - `bun test path/to/file.test.ts` — run a single test file
+
+Use the "rodney" skill for browser automation. You should check
+that the application is behaving as expected before completing
+each task.
 
 ## Bun Conventions
 
@@ -28,4 +34,4 @@ Default to using Bun instead of Node.js for all tooling.
 
 ## TypeScript
 
-Strict mode enabled. Uses bundler module resolution with `noEmit` (Bun handles execution directly). JSX configured as `react-jsx`.
+Strict mode enabled.
