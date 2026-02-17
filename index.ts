@@ -10,7 +10,12 @@ let maxCommits = 10000;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--max-commits" && args[i + 1]) {
-    maxCommits = parseInt(args[i + 1], 10);
+    const parsed = parseInt(args[i + 1], 10);
+    if (isNaN(parsed) || parsed <= 0) {
+      console.error("Error: --max-commits must be a positive integer");
+      process.exit(1);
+    }
+    maxCommits = parsed;
     i++;
   } else if (!args[i].startsWith("--")) {
     repoPath = args[i];

@@ -1,39 +1,7 @@
 import * as d3 from "d3";
+import type { FileCommit, FileNode, DirNode, RepoData } from "../src/types";
 
 // -- Types --
-
-interface FileCommit {
-  hash: string;
-  date: string;
-  author: string;
-  linesAdded: number;
-  linesRemoved: number;
-}
-
-interface FileNode {
-  name: string;
-  path: string;
-  type: "file" | "binfile";
-  createdAt: string;
-  deletedAt: string | null;
-  size: number;
-  commits: FileCommit[];
-}
-
-interface DirNode {
-  name: string;
-  path: string;
-  type: "directory";
-  children: Array<FileNode | DirNode>;
-}
-
-interface RepoData {
-  repoName: string;
-  firstCommitDate: string;
-  lastCommitDate: string;
-  tree: DirNode;
-  authors: string[];
-}
 
 interface GraphNode extends d3.SimulationNodeDatum {
   id: string;
@@ -53,6 +21,14 @@ interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
 }
 
 // -- Helpers --
+
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function getDominantAuthor(commits: FileCommit[]): {
   author: string;
@@ -169,9 +145,15 @@ function buildLegend(
 
 // -- Main --
 
-const header = document.getElementById("header")!;
-const app = document.getElementById("app")!;
-const tooltip = document.getElementById("tooltip")!;
+function getEl(id: string): HTMLElement {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`Missing required element #${id}`);
+  return el;
+}
+
+const header = getEl("header");
+const app = getEl("app");
+const tooltip = getEl("tooltip");
 
 try {
   const res = await fetch("/api/data");
@@ -192,7 +174,7 @@ try {
 
   // Populate header
   header.innerHTML = `
-    <div class="header-name">${data.repoName}</div>
+    <div class="header-name">${esc(data.repoName)}</div>
     <div class="header-stat"><span>${data.authors.length}</span> authors</div>
     <div class="header-stat"><span>${totalCommits.toLocaleString()}</span> commits</div>
   `;
@@ -204,15 +186,18 @@ try {
     throw new Error("empty repo");
   }
 
-  // Compute author commit counts for legend sorting
+  // Compute author commit counts for legend sorting (walk raw tree for full accuracy)
   const authorCommitCounts = new Map<string, number>();
-  for (const n of nodes) {
-    if (n.type !== "directory" && n.author) {
-      for (const tc of n.topContributors) {
-        authorCommitCounts.set(tc.name, (authorCommitCounts.get(tc.name) ?? 0) + tc.count);
+  function countAuthorCommits(node: DirNode | FileNode) {
+    if (node.type === "directory") {
+      for (const child of (node as DirNode).children) countAuthorCommits(child);
+    } else {
+      for (const c of (node as FileNode).commits) {
+        authorCommitCounts.set(c.author, (authorCommitCounts.get(c.author) ?? 0) + 1);
       }
     }
   }
+  countAuthorCommits(data.tree);
 
   // Scales
   const maxSize = d3.max(nodes, (d) => (d.type !== "directory" ? d.size : 0)) ?? 1;
@@ -220,8 +205,8 @@ try {
 
   const colorScale = d3.scaleOrdinal<string>().domain(data.authors).range(d3.schemeTableau10);
 
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  let width = window.innerWidth;
+  let height = window.innerHeight;
 
   // SVG
   const svg = d3
@@ -284,12 +269,12 @@ try {
         .map((c) => `${c.name} (${c.count})`)
         .join(", ");
       tooltip.innerHTML = `
-        <div class="tip-path">${d.id}</div>
+        <div class="tip-path">${esc(d.id)}</div>
         <div class="tip-meta">
           ${isDir ? `${d.size} children` : formatBytes(d.size)}<br>
           ${d.createdAt ? `Created: ${d.createdAt.slice(0, 10)}` : ""}
           ${!isDir ? `<br>Commits: ${d.commitCount}` : ""}
-          ${contribs ? `<br>Contributors: ${contribs}` : ""}
+          ${contribs ? `<br>Contributors: ${esc(contribs)}` : ""}
         </div>
       `;
     })
@@ -329,6 +314,15 @@ try {
 
   // Legend
   buildLegend(data.authors, colorScale, authorCommitCounts);
+
+  // Resize handler
+  window.addEventListener("resize", () => {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    svg.attr("viewBox", `0 0 ${width} ${height}`);
+    simulation.force("center", d3.forceCenter(width / 2, height / 2));
+    simulation.alpha(0.3).restart();
+  });
 } catch (err) {
   console.error("Failed to load repo data:", err);
   if (!app.textContent) {

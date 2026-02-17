@@ -9,13 +9,11 @@
     "dev": "bun run build && bun --hot index.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/d3": "^7.4.3",
+    "d3": "^7.9.0"
   },
   "peerDependencies": {
     "typescript": "^5"
-  },
-  "dependencies": {
-    "@types/d3": "^7.4.3",
-    "d3": "^7.9.0"
   }
 }

@@ -49,7 +49,10 @@ export function startServer(
           const ext = path.extname(filePath);
           const contentType = MIME[ext] ?? "application/octet-stream";
           return new Response(file, {
-            headers: { "content-type": contentType },
+            headers: {
+              "content-type": contentType,
+              "cache-control": "public, max-age=300",
+            },
           });
         }
       }
