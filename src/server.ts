@@ -31,11 +31,15 @@ export function startServer(
             headers: {
               "content-type": "application/json",
               "content-encoding": "gzip",
+              "cache-control": "no-store",
             },
           });
         }
         return new Response(cachedJson, {
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+          },
         });
       }
 

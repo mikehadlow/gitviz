@@ -45,18 +45,22 @@ function getDominantAuthor(commits: FileCommit[]): {
   };
 }
 
-function flattenTree(tree: DirNode): { nodes: GraphNode[]; links: GraphLink[] } {
+function flattenTree(tree: DirNode): {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  authorCommitCounts: Map<string, number>;
+} {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
+  const authorCommitCounts = new Map<string, number>();
 
   function walk(node: DirNode | FileNode, parentPath: string | null) {
     if (node.type === "directory") {
-      const dir = node as DirNode;
       const gn: GraphNode = {
-        id: dir.path || "(root)",
-        name: dir.name || tree.name || "(root)",
+        id: node.path || "(root)",
+        name: node.name || tree.name || "(root)",
         type: "directory",
-        size: dir.children.length,
+        size: node.children.length,
         author: "",
         commitCount: 0,
         createdAt: "",
@@ -67,24 +71,26 @@ function flattenTree(tree: DirNode): { nodes: GraphNode[]; links: GraphLink[] } 
       if (parentPath !== null) {
         links.push({ source: gn.id, target: parentPath || "(root)" });
       }
-      for (const child of dir.children) {
-        walk(child, dir.path);
+      for (const child of node.children) {
+        walk(child, node.path);
       }
     } else {
-      const file = node as FileNode;
       // Skip deleted files for now (Phase 5 timeline will handle them)
-      if (file.deletedAt !== null) return;
+      if (node.deletedAt !== null) return;
 
-      const { author, topContributors } = getDominantAuthor(file.commits);
+      const { author, topContributors } = getDominantAuthor(node.commits);
+      for (const c of node.commits) {
+        authorCommitCounts.set(c.author, (authorCommitCounts.get(c.author) ?? 0) + 1);
+      }
       const gn: GraphNode = {
-        id: file.path,
-        name: file.name,
-        type: file.type,
-        size: file.size,
+        id: node.path,
+        name: node.name,
+        type: node.type,
+        size: node.size,
         author,
-        commitCount: file.commits.length,
-        createdAt: file.createdAt,
-        deletedAt: file.deletedAt,
+        commitCount: node.commits.length,
+        createdAt: node.createdAt,
+        deletedAt: node.deletedAt,
         topContributors,
       };
       nodes.push(gn);
@@ -95,7 +101,7 @@ function flattenTree(tree: DirNode): { nodes: GraphNode[]; links: GraphLink[] } 
   }
 
   walk(tree, null);
-  return { nodes, links };
+  return { nodes, links, authorCommitCounts };
 }
 
 function formatBytes(bytes: number): string {
@@ -163,41 +169,26 @@ try {
   }
   const data: RepoData = await res.json();
 
-  // Count total commits across all files
-  function countCommits(node: DirNode | FileNode): number {
-    if (node.type === "directory") {
-      return (node as DirNode).children.reduce((sum, c) => sum + countCommits(c), 0);
-    }
-    return (node as FileNode).commits.length;
-  }
-  const totalCommits = countCommits(data.tree);
-
-  // Populate header
-  header.innerHTML = `
-    <div class="header-name">${esc(data.repoName)}</div>
-    <div class="header-stat"><span>${data.authors.length}</span> authors</div>
-    <div class="header-stat"><span>${totalCommits.toLocaleString()}</span> commits</div>
-  `;
-
-  const { nodes, links } = flattenTree(data.tree);
+  const { nodes, links, authorCommitCounts } = flattenTree(data.tree);
 
   if (nodes.length === 0) {
     app.textContent = "No files to visualize.";
     throw new Error("empty repo");
   }
 
-  // Compute author commit counts for legend sorting (walk raw tree for full accuracy)
-  const authorCommitCounts = new Map<string, number>();
-  function countAuthorCommits(node: DirNode | FileNode) {
-    if (node.type === "directory") {
-      for (const child of (node as DirNode).children) countAuthorCommits(child);
-    } else {
-      for (const c of (node as FileNode).commits) {
-        authorCommitCounts.set(c.author, (authorCommitCounts.get(c.author) ?? 0) + 1);
-      }
-    }
-  }
-  countAuthorCommits(data.tree);
+  const totalCommits = nodes.reduce((sum, n) => sum + n.commitCount, 0);
+  const dateRange =
+    data.firstCommitDate && data.lastCommitDate
+      ? `${data.firstCommitDate.slice(0, 4)}–${data.lastCommitDate.slice(0, 4)}`
+      : "";
+
+  // Populate header
+  header.innerHTML = `
+    <div class="header-name">${esc(data.repoName)}</div>
+    <div class="header-stat"><span>${data.authors.length}</span> authors</div>
+    <div class="header-stat"><span>${totalCommits.toLocaleString()}</span> commits</div>
+    ${dateRange ? `<div class="header-stat">${esc(dateRange)}</div>` : ""}
+  `;
 
   // Scales
   const maxSize = d3.max(nodes, (d) => (d.type !== "directory" ? d.size : 0)) ?? 1;
@@ -239,7 +230,34 @@ try {
     .join("circle")
     .attr("class", "node")
     .attr("r", (d) => (d.type === "directory" ? 5 : sizeScale(d.size)))
-    .attr("fill", (d) => (d.type === "directory" ? "#6e7681" : colorScale(d.author)));
+    .attr("fill", (d) => (d.type === "directory" ? "#6e7681" : colorScale(d.author)))
+    .attr("stroke-dasharray", (d) => (d.type === "binfile" ? "3,2" : null));
+
+  // Simulation
+  const simulation = d3
+    .forceSimulation<GraphNode>(nodes)
+    .force(
+      "link",
+      d3
+        .forceLink<GraphNode, GraphLink>(links)
+        .id((d) => d.id)
+        .distance(30),
+    )
+    .force("charge", d3.forceManyBody().strength(-50))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force(
+      "collide",
+      d3.forceCollide<GraphNode>((d) => (d.type === "directory" ? 7 : sizeScale(d.size) + 2)),
+    )
+    .on("tick", () => {
+      linkSelection
+        .attr("x1", (d) => (d.source as GraphNode).x!)
+        .attr("y1", (d) => (d.source as GraphNode).y!)
+        .attr("x2", (d) => (d.target as GraphNode).x!)
+        .attr("y2", (d) => (d.target as GraphNode).y!);
+
+      nodeSelection.attr("cx", (d) => d.x!).attr("cy", (d) => d.y!);
+    });
 
   // Drag
   const drag = d3
@@ -284,32 +302,6 @@ try {
     })
     .on("mouseout", () => {
       tooltip.style.opacity = "0";
-    });
-
-  // Simulation
-  const simulation = d3
-    .forceSimulation<GraphNode>(nodes)
-    .force(
-      "link",
-      d3
-        .forceLink<GraphNode, GraphLink>(links)
-        .id((d) => d.id)
-        .distance(30),
-    )
-    .force("charge", d3.forceManyBody().strength(-50))
-    .force("center", d3.forceCenter(width / 2, height / 2))
-    .force(
-      "collide",
-      d3.forceCollide<GraphNode>((d) => (d.type === "directory" ? 7 : sizeScale(d.size) + 2)),
-    )
-    .on("tick", () => {
-      linkSelection
-        .attr("x1", (d) => (d.source as GraphNode).x!)
-        .attr("y1", (d) => (d.source as GraphNode).y!)
-        .attr("x2", (d) => (d.target as GraphNode).x!)
-        .attr("y2", (d) => (d.target as GraphNode).y!);
-
-      nodeSelection.attr("cx", (d) => d.x!).attr("cy", (d) => d.y!);
     });
 
   // Legend
