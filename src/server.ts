@@ -14,8 +14,9 @@ export function startServer(
   repoData: RepoData,
   port: number,
 ): ReturnType<typeof Bun.serve> {
-  // Serialize once at startup instead of on every request
+  // Serialize and compress once at startup instead of on every request
   const cachedJson = JSON.stringify(repoData);
+  const cachedGzip = Bun.gzipSync(Buffer.from(cachedJson));
 
   return Bun.serve({
     port,
@@ -26,8 +27,7 @@ export function startServer(
         // Check if client accepts gzip
         const acceptEncoding = req.headers.get("accept-encoding") ?? "";
         if (acceptEncoding.includes("gzip")) {
-          const compressed = Bun.gzipSync(Buffer.from(cachedJson));
-          return new Response(compressed, {
+          return new Response(cachedGzip, {
             headers: {
               "content-type": "application/json",
               "content-encoding": "gzip",
